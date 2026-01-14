@@ -23,8 +23,6 @@ const getAllOrders = async (req, res) => {
   }
 };
 
-const pool = require("../config/db");
-
 const createOrder = async (req, res) => {
   const userId = req.user.id;
   const {
@@ -177,8 +175,6 @@ const rejectOrder = async (req, res) => {
   }
 };
 
-module.exports = { getAllOrders };
-module.exports = { createOrder };
 module.exports = {
   getAllOrders,
   createOrder,
