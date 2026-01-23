@@ -1,6 +1,6 @@
-import pool from "../db.js";
+const pool = require("../db");
 
-export async function expirePendingOrders() {
+async function expirePendingOrders() {
   const client = await pool.connect();
 
   try {
@@ -11,8 +11,8 @@ export async function expirePendingOrders() {
         SELECT id
         FROM orders
         WHERE payment_status = 'pending'
-            AND reviewed_at IS NULL
-            AND created_at < NOW() - INTERVAL '30 minutes'
+          AND reviewed_at IS NULL
+          AND created_at < NOW() - INTERVAL '30 minutes'
         FOR UPDATE
       )
       UPDATE orders
@@ -42,3 +42,5 @@ export async function expirePendingOrders() {
     client.release();
   }
 }
+
+module.exports = { expirePendingOrders };
