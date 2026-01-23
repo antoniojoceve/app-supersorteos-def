@@ -2,6 +2,7 @@ const pool = require("../config/db");
 const { sendEmail } = require("../services/emailService");
 const orderCreatedTemplate = require("../services/templates/orderCreated");
 const orderApprovedTemplate = require("../services/templates/orderApproved");
+const orderRejectedTemplate = require("../services/templates/orderRejected");
 
 const getAllOrders = async (req, res) => {
   try {
@@ -261,6 +262,14 @@ const rejectOrder = async (req, res) => {
     );
 
     await client.query("COMMIT");
+
+    await sendEmail({
+      to: user.email,
+      subject: "Orden rechazada - Super Sorteos",
+      html: orderRejectedTemplate({
+        raffleTitle: raffle.title,
+      }),
+    });
 
     res.json({ message: "Orden rechazada y números liberados" });
 
