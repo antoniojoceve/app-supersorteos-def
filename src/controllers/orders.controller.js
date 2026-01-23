@@ -1,4 +1,6 @@
 const pool = require("../config/db");
+const { sendEmail } = require("../services/emailService");
+const orderCreatedTemplate = require("../services/templates/orderCreated");
 
 const getAllOrders = async (req, res) => {
   try {
@@ -34,15 +36,15 @@ const createOrder = async (req, res) => {
   } = req.body;
 
   if (
-  !raffle_id ||
-  !Number.isInteger(ticket_count) ||
-  ticket_count <= 0 ||
-  !payment_method ||
-  !payment_reference ||
-  !receipt_url
-) {
-  return res.status(400).json({ error: "Datos incompletos" });
-}
+    !raffle_id ||
+    !Number.isInteger(ticket_count) ||
+    ticket_count <= 0 ||
+    !payment_method ||
+    !payment_reference ||
+    !receipt_url
+  ) {
+      return res.status(400).json({ error: "Datos incompletos" });
+    }
 
 
 
@@ -92,61 +94,61 @@ const createOrder = async (req, res) => {
       ]
     );
 
-    const orderId = orderRes.rows[0].id;
+  const orderId = orderRes.rows[0].id;
 
     // 4️⃣ Obtener números ya ocupados
-const takenRes = await client.query(
-  `
-  SELECT number
-  FROM order_numbers
-  WHERE raffle_id = $1
-  `,
-  [raffle_id]
-);
-
-const takenNumbers = new Set(takenRes.rows.map(r => r.number));
-
-// 5️⃣ Obtener total de números del sorteo
-const totalNumbersRes = await client.query(
-  `SELECT total_numbers FROM raffles WHERE id = $1`,
-  [raffle_id]
-);
-
-const totalNumbers = totalNumbersRes.rows[0].total_numbers;
-
-// 6️⃣ Verificar disponibilidad
-if (totalNumbers - takenNumbers.size < ticket_count) {
-  throw new Error("No hay suficientes números disponibles");
-}
-
-// 7️⃣ Generar números aleatorios únicos
-const assignedNumbers = new Set();
-
-while (assignedNumbers.size < ticket_count) {
-  const n = Math.floor(Math.random() * totalNumbers) + 1;
-  if (!takenNumbers.has(n)) {
-    assignedNumbers.add(n);
-  }
-}
-
-for (const number of assignedNumbers) {
-  await client.query(
+  const takenRes = await client.query(
     `
-    INSERT INTO order_numbers (order_id, raffle_id, number)
-    VALUES ($1, $2, $3)
+    SELECT number
+    FROM order_numbers
+    WHERE raffle_id = $1
     `,
-    [orderId, raffle_id, number]
+    [raffle_id]
   );
-}
+
+  const takenNumbers = new Set(takenRes.rows.map(r => r.number));
+
+  // 5️⃣ Obtener total de números del sorteo
+  const totalNumbersRes = await client.query(
+    `SELECT total_numbers FROM raffles WHERE id = $1`,
+    [raffle_id]
+  );
+
+  const totalNumbers = totalNumbersRes.rows[0].total_numbers;
+
+  // 6️⃣ Verificar disponibilidad
+  if (totalNumbers - takenNumbers.size < ticket_count) {
+    throw new Error("No hay suficientes números disponibles");
+  }
+
+  // 7️⃣ Generar números aleatorios únicos
+  const assignedNumbers = new Set();
+
+  while (assignedNumbers.size < ticket_count) {
+    const n = Math.floor(Math.random() * totalNumbers) + 1;
+    if (!takenNumbers.has(n)) {
+      assignedNumbers.add(n);
+    }
+  }
+
+  for (const number of assignedNumbers) {
+    await client.query(
+      `
+      INSERT INTO order_numbers (order_id, raffle_id, number)
+      VALUES ($1, $2, $3)
+      `,
+      [orderId, raffle_id, number]
+    );
+  }
 
     // ⛔ aquí luego irá order_numbers
 
-    await client.query("COMMIT");
+  await client.query("COMMIT");
 
-    res.status(201).json({
-      message: "Orden creada correctamente",
-      order_id: orderId,
-    });
+  res.status(201).json({
+    message: "Orden creada correctamente",
+    order_id: orderId,
+  });
 
   } catch (err) {
     await client.query("ROLLBACK");
@@ -156,6 +158,15 @@ for (const number of assignedNumbers) {
     client.release();
   }
 };
+
+await sendEmail({
+  to: user.email,
+  subject: "Orden creada - Super Sorteos",
+  html: orderCreatedTemplate({
+    raffleTitle: raffle.title,
+    totalAmount: order.total_amount,
+  }),
+});
 
 const approveOrder = async (req, res) => {
   const orderId = req.params.id;
