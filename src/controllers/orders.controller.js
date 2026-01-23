@@ -27,22 +27,24 @@ const createOrder = async (req, res) => {
   const userId = req.user.id;
   const {
     raffle_id,
-    numbers,
+    ticket_count,
     payment_method,
     payment_reference,
     receipt_url,
   } = req.body;
 
   if (
-    !raffle_id ||
-    !Array.isArray(numbers) ||
-    numbers.length === 0 ||
-    !payment_method ||
-    !payment_reference ||
-    !receipt_url
-  ) {
-    return res.status(400).json({ error: "Datos incompletos" });
-  }
+  !raffle_id ||
+  !Number.isInteger(ticket_count) ||
+  ticket_count <= 0 ||
+  !payment_method ||
+  !payment_reference ||
+  !receipt_url
+) {
+  return res.status(400).json({ error: "Datos incompletos" });
+}
+
+
 
   const client = await pool.connect();
 
@@ -62,7 +64,8 @@ const createOrder = async (req, res) => {
     const price = raffleRes.rows[0].price_per_ticket;
 
     // 2️⃣ Calcular total
-    const totalAmount = price * numbers.length;
+    const totalAmount = price * ticket_count;
+;
 
     // 3️⃣ Crear orden
     const orderRes = await client.query(
@@ -90,6 +93,51 @@ const createOrder = async (req, res) => {
     );
 
     const orderId = orderRes.rows[0].id;
+
+    // 4️⃣ Obtener números ya ocupados
+const takenRes = await client.query(
+  `
+  SELECT number
+  FROM order_numbers
+  WHERE raffle_id = $1
+  `,
+  [raffle_id]
+);
+
+const takenNumbers = new Set(takenRes.rows.map(r => r.number));
+
+// 5️⃣ Obtener total de números del sorteo
+const totalNumbersRes = await client.query(
+  `SELECT total_numbers FROM raffles WHERE id = $1`,
+  [raffle_id]
+);
+
+const totalNumbers = totalNumbersRes.rows[0].total_numbers;
+
+// 6️⃣ Verificar disponibilidad
+if (totalNumbers - takenNumbers.size < ticket_count) {
+  throw new Error("No hay suficientes números disponibles");
+}
+
+// 7️⃣ Generar números aleatorios únicos
+const assignedNumbers = new Set();
+
+while (assignedNumbers.size < ticket_count) {
+  const n = Math.floor(Math.random() * totalNumbers) + 1;
+  if (!takenNumbers.has(n)) {
+    assignedNumbers.add(n);
+  }
+}
+
+for (const number of assignedNumbers) {
+  await client.query(
+    `
+    INSERT INTO order_numbers (order_id, raffle_id, number)
+    VALUES ($1, $2, $3)
+    `,
+    [orderId, raffle_id, number]
+  );
+}
 
     // ⛔ aquí luego irá order_numbers
 
@@ -144,36 +192,66 @@ const approveOrder = async (req, res) => {
 const rejectOrder = async (req, res) => {
   const orderId = req.params.id;
   const adminId = req.user.id;
-  const { admin_note } = req.body;
+
+  const client = await pool.connect();
 
   try {
-    const result = await pool.query(
+    await client.query("BEGIN");
+
+    // 1️⃣ Verificar que la orden exista y esté pendiente
+    const orderRes = await client.query(
+      `
+      SELECT payment_status
+      FROM orders
+      WHERE id = $1
+      FOR UPDATE
+      `,
+      [orderId]
+    );
+
+    if (orderRes.rows.length === 0) {
+      throw new Error("Orden no encontrada");
+    }
+
+    if (orderRes.rows[0].payment_status !== "pending") {
+      throw new Error("Orden no válida o ya revisada");
+    }
+
+    // 2️⃣ Borrar números asignados (LIBERAR)
+    await client.query(
+      `
+      DELETE FROM order_numbers
+      WHERE order_id = $1
+      `,
+      [orderId]
+    );
+
+    // 3️⃣ Marcar orden como rechazada
+    await client.query(
       `
       UPDATE orders
       SET
         payment_status = 'rejected',
         reviewed_at = NOW(),
-        reviewed_by = $1,
-        admin_note = $2
-      WHERE id = $3
-        AND payment_status = 'pending'
-      RETURNING id
+        reviewed_by = $2
+      WHERE id = $1
       `,
-      [adminId, admin_note || null, orderId]
+      [orderId, adminId]
     );
 
-    if (result.rowCount === 0) {
-      return res.status(400).json({
-        error: "Orden no válida o ya revisada",
-      });
-    }
+    await client.query("COMMIT");
 
-    res.json({ message: "Orden rechazada correctamente" });
+    res.json({ message: "Orden rechazada y números liberados" });
+
   } catch (err) {
-    console.error("REJECT ORDER ERROR:", err);
-    res.status(500).json({ error: "Error interno" });
+    await client.query("ROLLBACK");
+    console.error("REJECT ORDER ERROR:", err.message);
+    res.status(400).json({ error: err.message });
+  } finally {
+    client.release();
   }
 };
+
 
 module.exports = {
   getAllOrders,
