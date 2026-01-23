@@ -8,6 +8,7 @@ const usersRoutes = require("./routes/users.routes");
 const authRoutes = require("./routes/auth.routes");
 const rafflesRoutes = require("./routes/raffles.routes");
 const ordersRoutes = require("./routes/orders.routes");
+const { logInfo, logError } = require("./logger");
 
 const app = express();
 
@@ -23,13 +24,13 @@ app.use("/api", ordersRoutes);
 
 // Expirar órdenes pending cada 5 minutos
 cron.schedule("*/5 * * * *", async () => {
-    try {
-        const count = await expirePendingOrders();
+  try {
+    const count = await expirePendingOrders();
     if (count > 0) {
-      console.log(`🕒 ${count} órdenes expiradas automáticamente`);
+      logInfo(`${count} órdenes expiradas automáticamente`);
     }
   } catch (err) {
-    console.error("Error expirando órdenes:", err);
+    logError(err);
   }
 });
     
