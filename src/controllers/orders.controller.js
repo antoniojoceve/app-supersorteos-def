@@ -1,6 +1,7 @@
 const pool = require("../config/db");
 const { sendEmail } = require("../services/emailService");
 const orderCreatedTemplate = require("../services/templates/orderCreated");
+const orderApprovedTemplate = require("../services/templates/orderApproved");
 
 const getAllOrders = async (req, res) => {
   try {
@@ -192,6 +193,15 @@ const approveOrder = async (req, res) => {
         error: "Orden no válida o ya revisada",
       });
     }
+
+    await sendEmail({
+      to: user.email,
+      subject: "Orden aprobada - Super Sorteos",
+      html: orderApprovedTemplate({
+        raffleTitle: raffle.title,
+        totalAmount: order.total_amount,
+      }),
+    });
 
     res.json({ message: "Orden aprobada correctamente" });
   } catch (err) {
