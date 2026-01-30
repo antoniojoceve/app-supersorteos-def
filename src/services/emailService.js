@@ -20,7 +20,7 @@ async function sendEmail({ to, subject, html }) {
     console.log("📧 Enviando email:", subject, "→", to);
 
     await resend.emails.send({
-      from: "onboarding@resend.dev",
+      from: "Resend <hello@resend.dev>",
       to,
       subject,
       html,
